@@ -47,7 +47,7 @@ def get_token(url, appid, secret, username, passhash):
         headers = {
             'Content-Type': 'application/json'
         }
-        url = f"//account/v1.0/token?appId={appid}&language=en"
+        url = f"/account/v1.0/token?appId={appid}&language=en"
         conn.request("POST", url, payload, headers)
         res = conn.getresponse()
         data = json.loads(res.read())
