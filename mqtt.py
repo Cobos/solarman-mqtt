@@ -51,3 +51,4 @@ def message(config, topic, msg):
     """
     client = connect_mqtt(config["broker"], config["port"], config["username"], config["password"])
     publish(client, topic, msg)
+    client.disconnect()

@@ -70,7 +70,7 @@ def get_station_realtime(url, stationid, token):
         'Content-Type': 'application/json',
         'Authorization': "bearer " + token
     }
-    conn.request("POST", "//station/v1.0/realTime?language=en", payload, headers)
+    conn.request("POST", "/station/v1.0/realTime?language=en", payload, headers)
     res = conn.getresponse()
     data = json.loads(res.read())
     return data
@@ -88,7 +88,7 @@ def get_device_current_data(url, device_sn, token):
         'Content-Type': 'application/json',
         'Authorization': "bearer " + token
     }
-    conn.request("POST", "//device/v1.0/currentData?language=en", payload, headers)
+    conn.request("POST", "/device/v1.0/currentData?language=en", payload, headers)
     res = conn.getresponse()
     data = json.loads(res.read())
     return data
@@ -100,7 +100,7 @@ def restruct_and_separate_current_data(data):
     :return: new current data
     """
     new_data_list = {}
-    if data["dataList"]:
+    if "dataList" in data and data["dataList"]:
         data_list = data["dataList"]
         for i in data_list:
             del i["key"]
@@ -129,6 +129,10 @@ def single_run(file):
     inverter_data = get_device_current_data(config["url"], config["inverterId"], token)
     logger_data = get_device_current_data(config["url"], config["loggerId"], token)
 
+    # Add logging to see what the API returns
+    logging.info("Inverter data response: %s", json.dumps(inverter_data, indent=2))
+    logging.info("Logger data response: %s", json.dumps(logger_data, indent=2))
+
     inverter_data_list = restruct_and_separate_current_data(inverter_data)
     logger_data_list = restruct_and_separate_current_data(logger_data)
 
@@ -143,7 +147,7 @@ def single_run(file):
     topic = config["mqtt"]["topic"]
 
     _t = time.strftime("%Y-%m-%d %H:%M:%S")
-    inverter_device_state = inverter_data["deviceState"]
+    inverter_device_state = inverter_data.get("deviceState", 0)
 
     if inverter_device_state == 1:
         logging.info("%s - Inverter DeviceState: %s -> Publishing MQTT...",
@@ -167,8 +171,8 @@ def single_run(file):
         if logger_data_list:
             mqtt.message(config["mqtt"], topic+"/logger/attributes", json.dumps(logger_data_list))
     else:
-        mqtt.message(config["mqtt"], topic+"/inverter/deviceState", inverter_data["deviceState"])
-        mqtt.message(config["mqtt"], topic+"/logger/deviceState", logger_data["deviceState"])
+        mqtt.message(config["mqtt"], topic+"/inverter/deviceState", inverter_data.get("deviceState", 0))
+        mqtt.message(config["mqtt"], topic+"/logger/deviceState", logger_data.get("deviceState", 0))
         logging.info("%s - Inverter DeviceState: %s"
                      "-> Only status MQTT publish (probably offline due to nighttime shutdown)",
                      _t, inverter_device_state)
