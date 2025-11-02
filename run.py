@@ -130,8 +130,8 @@ def single_run(file):
     logger_data = get_device_current_data(config["url"], config["loggerId"], token)
 
     # Add logging to see what the API returns
-    logging.info("Inverter data response: %s", json.dumps(inverter_data, indent=2))
-    logging.info("Logger data response: %s", json.dumps(logger_data, indent=2))
+    #logging.info("Inverter data response: %s", json.dumps(inverter_data, indent=2))
+    #logging.info("Logger data response: %s", json.dumps(logger_data, indent=2))
 
     inverter_data_list = restruct_and_separate_current_data(inverter_data)
     logger_data_list = restruct_and_separate_current_data(logger_data)
