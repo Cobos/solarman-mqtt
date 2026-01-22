@@ -288,7 +288,7 @@ version: '3'
 
 services:
   solarman-mqtt:
-    image: ghcr.io/lechk82/solarman-mqtt:latest
+    image: ghcr.io/cobos/solarman-mqtt:latest
     container_name: "solarman-mqtt"
     environment:
     - TZ=Europe/Berlin
