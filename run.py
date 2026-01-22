@@ -8,10 +8,11 @@ import json
 import logging
 import sys
 import time
+import datetime
 import mqtt
+from suntime import Sun
 
 logging.basicConfig(level=logging.INFO)
-
 
 def load_config(file):
     """
@@ -22,7 +23,6 @@ def load_config(file):
         config = json.load(config_file)
         return config
 
-
 def today():
     """
     Return date in YYYY-MM-DD
@@ -30,7 +30,6 @@ def today():
     """
     date = time.strftime("%Y-%m-%d")
     return date
-
 
 def get_token(url, appid, secret, username, passhash):
     """
@@ -111,12 +110,11 @@ def restruct_and_separate_current_data(data):
         del data["dataList"]
     return new_data_list
 
-def single_run(file):
+def single_run(config):
     """
     Output current watts and kilowatts
     :return:
     """
-    config = load_config(file)
     token = get_token(
         config["url"],
         config["appid"],
@@ -124,58 +122,94 @@ def single_run(file):
         config["username"],
         config["passhash"]
     )
+    
+    fetch_station = config.get("fetch_station", True)
+    fetch_inverter = config.get("fetch_inverter", True)
+    fetch_logger = config.get("fetch_logger", True)
+    
+    if not fetch_station and not fetch_inverter and not fetch_logger:
+        logging.info("Nothing to fetch")
+        return
 
-    station_data = get_station_realtime(config["url"], config["stationId"], token)
-    inverter_data = get_device_current_data(config["url"], config["inverterId"], token)
-    logger_data = get_device_current_data(config["url"], config["loggerId"], token)
+    station_data = {}
+    inverter_data = {}
+    logger_data = {}
+    inverter_data_list = []
+    logger_data_list = []
 
-    # Add logging to see what the API returns
-    #logging.info("Inverter data response: %s", json.dumps(inverter_data, indent=2))
-    #logging.info("Logger data response: %s", json.dumps(logger_data, indent=2))
-
-    inverter_data_list = restruct_and_separate_current_data(inverter_data)
-    logger_data_list = restruct_and_separate_current_data(logger_data)
+    if fetch_station:
+        station_data = get_station_realtime(config["url"], config["stationId"], token)
+    
+    if fetch_inverter:
+        inverter_data = get_device_current_data(config["url"], config["inverterId"], token)
+        inverter_data_list = restruct_and_separate_current_data(inverter_data)
+        
+    if fetch_logger:
+        logger_data = get_device_current_data(config["url"], config["loggerId"], token)
+        logger_data_list = restruct_and_separate_current_data(logger_data)
 
     if config["debug"]:
-        logging.info(json.dumps(station_data, indent=4, sort_keys=True))
-        logging.info(json.dumps(inverter_data, indent=4, sort_keys=True))
-        logging.info(json.dumps(inverter_data_list, indent=4, sort_keys=True))
-        logging.info(json.dumps(logger_data, indent=4, sort_keys=True))
-        logging.info(json.dumps(logger_data_list, indent=4, sort_keys=True))
+        if fetch_station: logging.info("Station data response: %s", json.dumps(station_data, indent=2))
+        if fetch_inverter: logging.info("Inverter data response: %s", json.dumps(inverter_data, indent=2))
+        if fetch_logger: logging.info("Logger data response: %s", json.dumps(logger_data, indent=2))
 
     discard = ["code", "msg", "requestId", "success"]
     topic = config["mqtt"]["topic"]
-
     _t = time.strftime("%Y-%m-%d %H:%M:%S")
+    
     inverter_device_state = inverter_data.get("deviceState", 0)
 
     if inverter_device_state == 1:
-        logging.info("%s - Inverter DeviceState: %s -> Publishing MQTT...",
-                     _t, inverter_device_state)
-        for i in station_data:
-            if station_data[i]:
-                if i not in discard:
+        logging.info("%s - Inverter DeviceState: %s -> Publishing MQTT...", _t, inverter_device_state)
+        
+        if fetch_station:
+            for i in station_data:
+                if station_data[i] and i not in discard:
                     mqtt.message(config["mqtt"], topic+"/station/" + i, station_data[i])
 
-        for i in inverter_data:
-            if inverter_data[i]:
-                if i not in discard:
+        if fetch_inverter:
+            for i in inverter_data:
+                if inverter_data[i] and i not in discard:
                     mqtt.message(config["mqtt"], topic+"/inverter/" + i, inverter_data[i])
-        if inverter_data_list:
-            mqtt.message(config["mqtt"], topic+"/inverter/attributes", json.dumps(inverter_data_list))
+            if inverter_data_list:
+                mqtt.message(config["mqtt"], topic+"/inverter/attributes", json.dumps(inverter_data_list))
 
-        for i in logger_data:
-            if logger_data[i]:
-                if i not in discard:
+        if fetch_logger:
+            for i in logger_data:
+                if logger_data[i] and i not in discard:
                     mqtt.message(config["mqtt"], topic+"/logger/" + i, logger_data[i])
-        if logger_data_list:
-            mqtt.message(config["mqtt"], topic+"/logger/attributes", json.dumps(logger_data_list))
+            if logger_data_list:
+                mqtt.message(config["mqtt"], topic+"/logger/attributes", json.dumps(logger_data_list))
     else:
-        mqtt.message(config["mqtt"], topic+"/inverter/deviceState", inverter_data.get("deviceState", 0))
-        mqtt.message(config["mqtt"], topic+"/logger/deviceState", logger_data.get("deviceState", 0))
-        logging.info("%s - Inverter DeviceState: %s"
-                     "-> Only status MQTT publish (probably offline due to nighttime shutdown)",
-                     _t, inverter_device_state)
+        if fetch_inverter:
+            mqtt.message(config["mqtt"], topic+"/inverter/deviceState", inverter_device_state)
+        if fetch_logger:
+            mqtt.message(config["mqtt"], topic+"/logger/deviceState", logger_data.get("deviceState", 0))
+            
+        logging.info("%s - Inverter DeviceState: %s -> Only status MQTT publish", _t, inverter_device_state)
+
+def is_sun_active(config):
+    latitude = config.get("latitude", 0.0)
+    longitude = config.get("longitude", 0.0)    
+    if latitude == 0.0 and longitude == 0.0:
+        return True
+        
+    sun_margin_minutes = config.get("sunmarginminutes", 30)    
+    sun = Sun(latitude, longitude)
+    now = datetime.datetime.now(datetime.timezone.utc).astimezone()    
+    sunrise = sun.get_local_sunrise_time()
+    sunset = sun.get_local_sunset_time()
+    margin = datetime.timedelta(minutes=sun_margin_minutes)    
+    start_window = sunrise - margin
+    end_window = sunset + margin    
+    is_within_window = start_window <= now <= end_window    
+    print(f"-----------------------------")       
+    print(f"Current System Time:      {now.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+    print(f"Sunrise-Sunset:           {sunrise.strftime('%H:%M:%S')} - {sunset.strftime('%H:%M:%S')}")
+    print(f"Operational Window Start: {start_window.strftime('%H:%M:%S')} (Margin: -{sun_margin_minutes}m)")
+    print(f"Operational Window End:   {end_window.strftime('%H:%M:%S')} (Margin: +{sun_margin_minutes}m)")
+    print(f"Status:                   {'WITHIN_OPERATIONAL_WINDOW' if is_within_window else 'OUTSIDE_OPERATIONAL_WINDOW'}")    
+    return is_within_window
 
 def daemon(file, interval):
     """
@@ -188,12 +222,14 @@ def daemon(file, interval):
     logging.info("Starting daemonized with a %s seconds run interval", str(interval))
     while True:
         try:
-            single_run(file)
+            config = load_config(file)
+            sun_active = is_sun_active(config)
+            if sun_active:
+                single_run(config)
             time.sleep(interval)
         except Exception as error:  # pylint: disable=broad-except
             logging.error("Error on start: %s", str(error))
             sys.exit(1)
-
 
 def main():
     """
