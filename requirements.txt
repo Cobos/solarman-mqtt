@@ -1,1 +1,2 @@
 paho_mqtt==1.5.1
+suntime==1.3.2
