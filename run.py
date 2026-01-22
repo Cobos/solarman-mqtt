@@ -127,67 +127,48 @@ def single_run(config):
     fetch_inverter = config.get("fetch_inverter", True)
     fetch_logger = config.get("fetch_logger", True)
     
-    if not fetch_station and not fetch_inverter and not fetch_logger:
-        logging.info("Nothing to fetch")
+    if not any([fetch_station, fetch_inverter, fetch_logger]):
+        logging.info("Nothing to fetch (all modules disabled)")
         return
 
-    station_data = {}
-    inverter_data = {}
-    logger_data = {}
-    inverter_data_list = []
-    logger_data_list = []
+    station_data = get_station_realtime(config["url"], config["stationId"], token) if fetch_station else {}
+    inverter_raw = get_device_current_data(config["url"], config["inverterId"], token) if fetch_inverter else {}
+    logger_raw = get_device_current_data(config["url"], config["loggerId"], token) if fetch_logger else {}
 
-    if fetch_station:
-        station_data = get_station_realtime(config["url"], config["stationId"], token)
-    
-    if fetch_inverter:
-        inverter_data = get_device_current_data(config["url"], config["inverterId"], token)
-        inverter_data_list = restruct_and_separate_current_data(inverter_data)
-        
-    if fetch_logger:
-        logger_data = get_device_current_data(config["url"], config["loggerId"], token)
-        logger_data_list = restruct_and_separate_current_data(logger_data)
+    inverter_attr = restruct_and_separate_current_data(inverter_raw)
+    logger_attr = restruct_and_separate_current_data(logger_raw)
 
-    if config["debug"]:
-        if fetch_station: logging.info("Station data response: %s", json.dumps(station_data, indent=2))
-        if fetch_inverter: logging.info("Inverter data response: %s", json.dumps(inverter_data, indent=2))
-        if fetch_logger: logging.info("Logger data response: %s", json.dumps(logger_data, indent=2))
-
-    discard = ["code", "msg", "requestId", "success"]
+    discard = ["code", "msg", "requestId", "success", "dataList"]
     topic = config["mqtt"]["topic"]
     _t = time.strftime("%Y-%m-%d %H:%M:%S")
     
-    inverter_device_state = inverter_data.get("deviceState", 0)
+    inverter_state = inverter_raw.get("deviceState", 0)
 
-    if inverter_device_state == 1:
-        logging.info("%s - Inverter DeviceState: %s -> Publishing MQTT...", _t, inverter_device_state)
+    if inverter_state == 1:
+        logging.info("%s - Inverter Online -> Publishing Data", _t)
         
         if fetch_station:
-            for i in station_data:
-                if station_data[i] and i not in discard:
-                    mqtt.message(config["mqtt"], topic+"/station/" + i, station_data[i])
+            for k, v in station_data.items():
+                if v is not None and k not in discard:
+                    mqtt.message(config["mqtt"], f"{topic}/station/{k}", v)
 
         if fetch_inverter:
-            for i in inverter_data:
-                if inverter_data[i] and i not in discard:
-                    mqtt.message(config["mqtt"], topic+"/inverter/" + i, inverter_data[i])
-            if inverter_data_list:
-                mqtt.message(config["mqtt"], topic+"/inverter/attributes", json.dumps(inverter_data_list))
+            for k, v in inverter_raw.items():
+                if v is not None and k not in discard:
+                    mqtt.message(config["mqtt"], f"{topic}/inverter/{k}", v)
+            if inverter_attr:
+                mqtt.message(config["mqtt"], f"{topic}/inverter/attributes", json.dumps(inverter_attr))
 
         if fetch_logger:
-            for i in logger_data:
-                if logger_data[i] and i not in discard:
-                    mqtt.message(config["mqtt"], topic+"/logger/" + i, logger_data[i])
-            if logger_data_list:
-                mqtt.message(config["mqtt"], topic+"/logger/attributes", json.dumps(logger_data_list))
+            for k, v in logger_raw.items():
+                if v is not None and k not in discard:
+                    mqtt.message(config["mqtt"], f"{topic}/logger/{k}", v)
+            if logger_attr:
+                mqtt.message(config["mqtt"], f"{topic}/logger/attributes", json.dumps(logger_attr))
     else:
-        if fetch_inverter:
-            mqtt.message(config["mqtt"], topic+"/inverter/deviceState", inverter_device_state)
-        if fetch_logger:
-            mqtt.message(config["mqtt"], topic+"/logger/deviceState", logger_data.get("deviceState", 0))
-            
-        logging.info("%s - Inverter DeviceState: %s -> Only status MQTT publish", _t, inverter_device_state)
-
+        if fetch_inverter: mqtt.message(config["mqtt"], f"{topic}/inverter/deviceState", inverter_state)
+        logging.info("%s - Inverter Offline/Night (State: %s)", _t, inverter_state)
+        
 def is_sun_active(config):
     latitude = config.get("latitude", 0.0)
     longitude = config.get("longitude", 0.0)    
