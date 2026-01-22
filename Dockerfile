@@ -148,6 +148,7 @@ RUN set -ex; \
 ADD . /opt/app-root/src/
 
 RUN pip install paho_mqtt 
+RUN pip install suntime
 
 WORKDIR /opt/app-root/src
 
