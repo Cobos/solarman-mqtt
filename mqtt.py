@@ -19,7 +19,7 @@ def connect_mqtt(broker, port, username, password):
     :return:
     """
     client_id = f'solarmanpv-mqtt-{random.randint(0, 1000)}'
-    client = mqtt_client.Client(client_id)
+    client = mqtt_client.Client(mqtt_client.CallbackAPIVersion.VERSION1, client_id)
     client.username_pw_set(username, password)
     client.connect(broker, port)
     return client
