@@ -177,7 +177,7 @@ def is_sun_active(config):
         
     sun_margin_minutes = config.get("sunmarginminutes", 30)    
     sun = Sun(latitude, longitude)
-    now = datetime.datetime.now(datetime.timezone.utc).astimezone()    
+    now = datetime.datetime.now(datetime.timezone.utc)
     sunrise = sun.get_local_sunrise_time()
     sunset = sun.get_local_sunset_time()
     margin = datetime.timedelta(minutes=sun_margin_minutes)    
