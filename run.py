@@ -30,12 +30,23 @@ def today():
     """
     date = time.strftime("%Y-%m-%d")
     return date
+    
+cached_token = None
+token_expiry = 0
 
 def get_token(url, appid, secret, username, passhash):
     """
     Get a token from the API
     :return: access_token
     """
+    global cached_token, token_expiry
+    # Check if the cached token is still valid (using a 5-minute safety buffer)
+    current_time = time.time()
+    if cached_token and current_time < (token_expiry - 300):
+        logging.debug("Using cached token")
+        return cached_token
+        
+    logging.debug("Getting token")    
     try:
         conn = http.client.HTTPSConnection(url)
         payload = json.dumps({
@@ -51,7 +62,16 @@ def get_token(url, appid, secret, username, passhash):
         res = conn.getresponse()
         data = json.loads(res.read())
         logging.debug("Received token")
-        return data["access_token"]
+
+        if "access_token" in data:
+            cached_token = data["access_token"]
+            # Solarman tokens usually last 2 months; 
+            # Use 'expires_in' from response or default to 5,184,000 seconds
+            expires_in = data.get("expires_in", 5183999)
+            token_expiry = current_time + int(expires_in)
+            return cached_token
+        else:
+            raise Exception(f"API Error: {data.get('msg', 'Unknown error')}")        
     except Exception as error:  # pylint: disable=broad-except
         logging.error("Unable to fetch token: %s", str(error))
         sys.exit(1)
@@ -122,7 +142,10 @@ def single_run(config):
         config["username"],
         config["passhash"]
     )
-    
+    if not token:
+        logging.error("No valid token available. Skipping this run.")
+        return
+        
     fetch_station = config.get("fetch_station", True)
     fetch_inverter = config.get("fetch_inverter", True)
     fetch_logger = config.get("fetch_logger", True)
@@ -178,8 +201,8 @@ def is_sun_active(config):
     sun_margin_minutes = config.get("sunmarginminutes", 30)    
     sun = Sun(latitude, longitude)
     now = datetime.datetime.now(datetime.timezone.utc)
-    sunrise = sun.get_local_sunrise_time()
-    sunset = sun.get_local_sunset_time()
+    sunrise = sun.get_local_sunrise_time().astimezone(datetime.timezone.utc)
+    sunset = sun.get_local_sunset_time().astimezone(datetime.timezone.utc)
     margin = datetime.timedelta(minutes=sun_margin_minutes)    
     start_window = sunrise - margin
     end_window = sunset + margin    
