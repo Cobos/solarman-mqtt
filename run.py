@@ -198,21 +198,26 @@ def is_sun_active(config):
     if latitude == 0.0 and longitude == 0.0:
         return True
         
-    sun_margin_minutes = config.get("sunmarginminutes", 30)    
     sun = Sun(latitude, longitude)
-    now = datetime.datetime.now(datetime.timezone.utc)
-    sunrise = sun.get_local_sunrise_time().astimezone(datetime.timezone.utc)
-    sunset = sun.get_local_sunset_time().astimezone(datetime.timezone.utc)
-    margin = datetime.timedelta(minutes=sun_margin_minutes)    
-    start_window = sunrise - margin
-    end_window = sunset + margin    
-    is_within_window = start_window <= now <= end_window    
-    print(f"-----------------------------")       
-    print(f"Current System Time:      {now.strftime('%Y-%m-%d %H:%M:%S %Z')}")
-    print(f"Sunrise-Sunset:           {sunrise.strftime('%H:%M:%S')} - {sunset.strftime('%H:%M:%S')}")
-    print(f"Operational Window Start: {start_window.strftime('%H:%M:%S')} (Margin: -{sun_margin_minutes}m)")
-    print(f"Operational Window End:   {end_window.strftime('%H:%M:%S')} (Margin: +{sun_margin_minutes}m)")
-    print(f"Status:                   {'WITHIN_OPERATIONAL_WINDOW' if is_within_window else 'OUTSIDE_OPERATIONAL_WINDOW'}")    
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    sunrise_utc = sun.get_sunrise_time(now_utc)
+    sunset_utc = sun.get_sunset_time(now_utc)
+    now_local = now_utc.astimezone()
+    sunrise_local = sunrise_utc.astimezone()
+    sunset_local = sunset_utc.astimezone()
+    tz_name = now_local.strftime('%Z')
+    tz_offset = now_local.strftime('%z')
+    sun_margin_minutes = config.get("sunmarginminutes", 30)
+    margin = datetime.timedelta(minutes=sun_margin_minutes)
+    start_window = sunrise_local - margin
+    end_window = sunset_local + margin
+    is_within_window = start_window <= now_local <= end_window
+    logging.info(f"-----------------------------")
+    logging.info(f"Current Timezone:                    {tz_name} ({tz_offset})")
+    logging.info(f"Current Local Time:                  {now_local.strftime('%Y-%m-%d %H:%M:%S')}")
+    logging.info(f"Sunrise-Sunset (Local):              {sunrise_local.strftime('%H:%M:%S')} - {sunset_local.strftime('%H:%M:%S')}")
+    logging.info(f"Operational Window (Margin: +/-{sun_margin_minutes}m): {start_window.strftime('%H:%M:%S')} - {end_window.strftime('%H:%M:%S')}")
+    logging.info(f"Status:                              {'Active' if is_within_window else 'Awaiting sun'}")
     return is_within_window
 
 def daemon(file, interval):
