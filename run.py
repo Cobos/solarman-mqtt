@@ -193,9 +193,9 @@ def single_run(config):
         logging.info("%s - Inverter Offline/Night (State: %s)", _t, inverter_state)
         
 def is_sun_active(config):
-    latitude = config.get("latitude", 0.0)
-    longitude = config.get("longitude", 0.0)    
-    if latitude == 0.0 and longitude == 0.0:
+    longitude = config.get("longitude", 0.0) 
+    latitude = config.get("latitude", 0.0)   
+    if longitude == 0.0 and latitude == 0.0:
         return True
         
     sun = Sun(latitude, longitude)
@@ -209,10 +209,11 @@ def is_sun_active(config):
     tz_offset = now_local.strftime('%z')
     sun_margin_minutes = config.get("sunmarginminutes", 30)
     margin = datetime.timedelta(minutes=sun_margin_minutes)
-    start_window = sunrise_local - margin
-    end_window = sunset_local + margin
-    is_within_window = start_window <= now_local <= end_window
+    start_window = (datetime.datetime.combine(now_local.date(), sunrise_local.time()) - margin).time()
+    end_window = (datetime.datetime.combine(now_local.date(), sunset_local.time()) + margin).time()
+    is_within_window = (end_window <= start_window) or (start_window <= now_local.time() <= end_window)
     logging.info(f"-----------------------------")
+    logging.info(f"Location:                            {longitude} {latitude}")
     logging.info(f"Current Timezone:                    {tz_name} ({tz_offset})")
     logging.info(f"Current Local Time:                  {now_local.strftime('%Y-%m-%d %H:%M:%S')}")
     logging.info(f"Sunrise-Sunset (Local):              {sunrise_local.strftime('%H:%M:%S')} - {sunset_local.strftime('%H:%M:%S')}")
